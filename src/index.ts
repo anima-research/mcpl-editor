@@ -16,8 +16,8 @@ function getArg(name: string, fallback: string): string {
   return args[idx + 1]!;
 }
 
-const port = parseInt(getArg('port', '3100'), 10);
-const storePath = getArg('store', './data/editor-store');
+const port = parseInt(process.env.PORT ?? getArg('port', '3100'), 10);
+const storePath = process.env.STORE_PATH ?? getArg('store', './data/editor-store');
 const seed = getArg('seed', '');
 
 const server = new EditorServer({

@@ -81,6 +81,9 @@ export class EditorServer {
       next();
     });
 
+    // Health check
+    app.get('/health', (_req, res) => { res.json({ status: 'ok' }); });
+
     // API: get current document
     app.get('/api/document', (_req, res) => {
       res.json({ text: this.doc.getText(), checkpoint: this.doc.currentCheckpoint() });
