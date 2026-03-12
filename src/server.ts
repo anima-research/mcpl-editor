@@ -192,6 +192,9 @@ export class EditorServer {
       },
     });
 
+    // Catch up to transition subscription to live mode
+    this.store.catchUpSubscription(subscriptionId);
+
     const client: BrowserClient = { ws, clientId, subscriptionId };
     this.browserClients.set(clientId, client);
 
@@ -256,6 +259,9 @@ export class EditorServer {
 
       let event: JsStoreEvent | null;
       while ((event = this.store.pollSubscription(client.subscriptionId)) !== null) {
+        // Skip lifecycle events (caught_up, dropped)
+        if (event.eventType === 'caught_up' || event.eventType === 'dropped') continue;
+
         // Parse the event data
         const parsed = JSON.parse(event.data);
 
