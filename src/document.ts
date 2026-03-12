@@ -280,5 +280,7 @@ export class DocumentModel {
     if (this.opsSinceCheckpoint >= CHECKPOINT_INTERVAL) {
       this.forceCheckpoint();
     }
+    // Flush writes to disk so data survives container restarts
+    this.store.sync();
   }
 }
