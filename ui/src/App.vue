@@ -1,14 +1,43 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue';
+import { keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
+import { markdown } from '@codemirror/lang-markdown';
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
 import { useWebSocket } from './api/websocket.js';
 import { createEditorSync } from './editor/sync.js';
 import Editor from './editor/Editor.vue';
 import Chat from './chat/Chat.vue';
 
 const ws = useWebSocket();
-const sync = createEditorSync(ws);
 
-// Route WS messages to editor sync
+const sync = createEditorSync(ws, [
+  lineNumbers(),
+  highlightActiveLine(),
+  drawSelection(),
+  highlightSelectionMatches(),
+  history(),
+  syntaxHighlighting(defaultHighlightStyle),
+  markdown(),
+  keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+  EditorView.theme({
+    '&': { height: '100%', fontSize: '14px' },
+    '.cm-scroller': {
+      overflow: 'auto',
+      fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+    },
+    '.cm-content': { padding: '16px 0' },
+    '.cm-gutters': {
+      backgroundColor: '#f8f9fa',
+      borderRight: '1px solid #e0e0e0',
+      color: '#999',
+    },
+    '.cm-activeLine': { backgroundColor: '#f0f4ff' },
+  }),
+]);
+
 ws.onMessage((msg) => sync.handleMessage(msg));
 
 onMounted(() => {
@@ -27,7 +56,6 @@ onUnmounted(() => {
       <span class="status" :class="{ connected: ws.connected.value }">
         {{ ws.connected.value ? 'Connected' : 'Disconnected' }}
       </span>
-      <span v-if="ws.clientId.value" class="client-id">{{ ws.clientId.value }}</span>
     </div>
     <div class="main">
       <div class="editor-pane">
@@ -74,12 +102,6 @@ onUnmounted(() => {
 
 .status.connected {
   background: #27ae60;
-}
-
-.client-id {
-  opacity: 0.5;
-  font-size: 11px;
-  font-family: monospace;
 }
 
 .main {

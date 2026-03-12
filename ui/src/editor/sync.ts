@@ -1,31 +1,29 @@
 /**
  * Editor sync — CM6 collab extension bridged to WebSocket.
  *
- * Uses @codemirror/collab for proper OT-style collaboration:
- * - Local changes are sent as serialized ChangeSets
- * - Remote changes are received and applied via receiveUpdates()
- * - The collab extension handles rebasing unconfirmed local changes
- *
- * The server (Chronicle) is the single sequencer — its sequence number
- * IS the collab version.
+ * The editor is created AFTER the init message arrives (so we know the
+ * correct startVersion). The collab extension handles rebasing
+ * unconfirmed local changes against confirmed remote ones.
  */
 
 import { collab, sendableUpdates, receiveUpdates, getSyncedVersion } from '@codemirror/collab';
-import { ChangeSet, type Extension } from '@codemirror/state';
+import { ChangeSet, EditorState, type Extension } from '@codemirror/state';
 import { EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view';
 import type { UseWebSocket, WsMessage } from '../api/websocket.js';
 
 export interface EditorSync {
-  /** Create the CM6 collab extensions (pass to EditorState.create). */
-  extensions(): Extension[];
   /** Handle a WebSocket message. */
   handleMessage(msg: WsMessage): void;
+  /** Called by the App when the editor container element is ready. */
+  setContainer(el: HTMLElement): void;
+  /** Provide the static extensions (everything except collab). */
+  staticExtensions: Extension[];
 }
 
-export function createEditorSync(ws: UseWebSocket): EditorSync {
+export function createEditorSync(ws: UseWebSocket, staticExtensions: Extension[]): EditorSync {
   let view: EditorView | null = null;
-  let startVersion = 0;
-  let clientID = '';
+  let container: HTMLElement | null = null;
+  let pendingUpdates: Array<{ changes: unknown; clientID: string }> = [];
 
   function pushUpdates() {
     if (!view) return;
@@ -42,66 +40,68 @@ export function createEditorSync(ws: UseWebSocket): EditorSync {
     });
   }
 
-  function handleMessage(msg: WsMessage) {
-    if (!view) return;
+  function createEditor(text: string, version: number, clientID: string) {
+    if (!container) return;
+    if (view) view.destroy();
 
+    const state = EditorState.create({
+      doc: text,
+      extensions: [
+        ...staticExtensions,
+        collab({ startVersion: version, clientID }),
+        ViewPlugin.fromClass(class {
+          update(update: ViewUpdate) {
+            if (update.docChanged) pushUpdates();
+          }
+        }),
+      ],
+    });
+
+    view = new EditorView({ state, parent: container });
+
+    // Apply any updates that arrived before the editor was created
+    if (pendingUpdates.length > 0) {
+      applyRemoteUpdates(pendingUpdates);
+      pendingUpdates = [];
+    }
+  }
+
+  function applyRemoteUpdates(serialized: Array<{ changes: unknown; clientID: string }>) {
+    if (!view) return;
+    const updates = serialized.map(u => ({
+      changes: ChangeSet.fromJSON(u.changes),
+      clientID: u.clientID,
+    }));
+    view.dispatch(receiveUpdates(view.state, updates));
+    pushUpdates();
+  }
+
+  function handleMessage(msg: WsMessage) {
     switch (msg.type) {
       case 'init': {
-        // Server sends initial document + version
         const text = msg.text as string;
-        startVersion = msg.version as number;
-        clientID = msg.clientId as string;
-
-        // Replace entire document content
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: text },
-        });
+        const version = msg.version as number;
+        const clientID = msg.clientId as string;
+        createEditor(text, version, clientID);
         break;
       }
 
       case 'updates': {
-        // Server pushes confirmed updates
         const serialized = msg.updates as Array<{ changes: unknown; clientID: string }>;
-        const updates = serialized.map(u =>
-          ({
-            changes: ChangeSet.fromJSON(u.changes),
-            clientID: u.clientID,
-          }),
-        );
-
-        view.dispatch(receiveUpdates(view.state, updates));
-
-        // After receiving updates, check if we have unconfirmed changes to push
-        pushUpdates();
+        if (view) {
+          applyRemoteUpdates(serialized);
+        } else {
+          // Editor not ready yet — buffer updates
+          pendingUpdates.push(...serialized);
+        }
         break;
       }
     }
   }
 
-  function extensions(): Extension[] {
-    return [
-      collab({ startVersion, clientID }),
-      ViewPlugin.fromClass(class {
-        constructor(private view: EditorView) {
-          // Capture view reference for the sync layer
-          // Use queueMicrotask to avoid dispatching during init
-          queueMicrotask(() => {
-            (view as any); // keep reference alive
-            setView(this.view);
-          });
-        }
-        update(update: ViewUpdate) {
-          if (update.docChanged) {
-            pushUpdates();
-          }
-        }
-      }),
-    ];
+  function setContainer(el: HTMLElement) {
+    container = el;
   }
 
-  function setView(v: EditorView) {
-    view = v;
-  }
-
-  return { extensions, handleMessage };
+  return { handleMessage, setContainer, staticExtensions };
 }
