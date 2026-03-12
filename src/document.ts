@@ -1,11 +1,16 @@
 /**
- * Document model — Chronicle-backed document storage with operation log.
+ * Document model — Chronicle-backed with CM6 ChangeSet operations.
  *
- * Each edit is a `doc.op` record. Periodic `doc.checkpoint` records
- * store full document snapshots for fast catch-up. The document is
- * reconstructed by replaying ops from the last checkpoint.
+ * Each edit is a `doc.op` record containing a serialized CM6 ChangeSet.
+ * The server maintains the document as a CM6 Text object and applies
+ * ChangeSets in Chronicle sequence order. Periodic `doc.checkpoint`
+ * records store full text snapshots for fast catch-up.
+ *
+ * The Chronicle sequence number IS the collab version — clients use it
+ * to track confirmed vs unconfirmed changes.
  */
 
+import { ChangeSet, Text } from '@codemirror/state';
 import { JsStore } from 'chronicle';
 import type { JsRecord } from 'chronicle';
 
@@ -13,24 +18,20 @@ import type { JsRecord } from 'chronicle';
 // Types
 // ============================================================================
 
+/** Serialized update as stored in doc.op records. */
+export interface SerializedUpdate {
+  /** CM6 ChangeSet JSON (from ChangeSet.toJSON()) */
+  changes: unknown;
+  /** Client identifier */
+  clientID: string;
+}
+
 export interface EditOperation {
   type: 'replace_all' | 'replace_range' | 'insert_after';
   text: string;
   startLine?: number;
   endLine?: number;
   line?: number;
-}
-
-export interface DocOp {
-  /** Operation that transforms the document. For now, replace_all with full text. */
-  text: string;
-  clientId: string;
-  /** Previous document text (for diffing in push/event). */
-  previousLength: number;
-}
-
-export interface DocCheckpoint {
-  text: string;
 }
 
 export interface OutlineEntry {
@@ -43,20 +44,24 @@ export interface OutlineEntry {
 // DocumentModel
 // ============================================================================
 
-const CHECKPOINT_INTERVAL = 100; // Create checkpoint every N ops
+const CHECKPOINT_INTERVAL = 100;
 
 export class DocumentModel {
   private store: JsStore;
-  private currentText: string = '';
-  private opsSinceCheckpoint: number = 0;
+  private doc: Text;
+  /** Version = number of doc.op records processed. Maps to Chronicle sequence offset. */
+  private version = 0;
+  /** Sequence number of the baseline (last checkpoint or 0). */
+  private baselineSeq = 0;
+  private opsSinceCheckpoint = 0;
 
   constructor(store: JsStore) {
     this.store = store;
+    this.doc = Text.of(['']);
   }
 
   /** Initialize from store — find latest checkpoint + replay ops. */
   init(): void {
-    // Find the latest checkpoint
     const checkpoints = this.store.query({
       types: ['doc.checkpoint'],
       reverse: true,
@@ -66,27 +71,46 @@ export class DocumentModel {
     let fromSeq = 0;
     if (checkpoints.length > 0) {
       const cp = checkpoints[0]!;
-      const payload = JSON.parse(Buffer.from(cp.payload).toString('utf-8')) as DocCheckpoint;
-      this.currentText = payload.text;
+      const payload = JSON.parse(Buffer.from(cp.payload).toString('utf-8'));
+      this.doc = Text.of(payload.text.split('\n'));
       fromSeq = cp.sequence;
+      this.baselineSeq = fromSeq;
     }
 
     // Replay ops since checkpoint
-    const ops = this.store.query({
-      types: ['doc.op'],
-      fromSequence: fromSeq + 1,
-    });
+    if (fromSeq < this.store.currentSequence()) {
+      const ops = this.store.query({
+        types: ['doc.op'],
+        fromSequence: fromSeq + 1,
+      });
 
-    for (const record of ops) {
-      const op = JSON.parse(Buffer.from(record.payload).toString('utf-8')) as DocOp;
-      this.currentText = op.text;
-      this.opsSinceCheckpoint++;
+      for (const record of ops) {
+        const update = JSON.parse(Buffer.from(record.payload).toString('utf-8')) as SerializedUpdate;
+        try {
+          const changes = ChangeSet.fromJSON(update.changes);
+          this.doc = changes.apply(this.doc);
+          this.version++;
+          this.opsSinceCheckpoint++;
+        } catch {
+          // Skip invalid ops (e.g., from older full-text format)
+        }
+      }
     }
+  }
+
+  /** Current collab version (number of applied doc.ops). */
+  getVersion(): number {
+    return this.version;
   }
 
   /** Get current document text. */
   getText(): string {
-    return this.currentText;
+    return this.doc.toString();
+  }
+
+  /** Get document length. */
+  getLength(): number {
+    return this.doc.length;
   }
 
   /** Get document text at a historical checkpoint. */
@@ -94,7 +118,6 @@ export class DocumentModel {
     const seq = this.parseCheckpoint(checkpoint);
     if (seq === null) return null;
 
-    // Find latest checkpoint at or before seq
     const checkpoints = this.store.query({
       types: ['doc.checkpoint'],
       toSequence: seq,
@@ -106,13 +129,14 @@ export class DocumentModel {
     let fromSeq = 0;
     if (checkpoints.length > 0) {
       const cp = checkpoints[0]!;
-      const payload = JSON.parse(Buffer.from(cp.payload).toString('utf-8')) as DocCheckpoint;
+      const payload = JSON.parse(Buffer.from(cp.payload).toString('utf-8'));
       text = payload.text;
       fromSeq = cp.sequence;
     }
 
-    // Replay ops between checkpoint and target seq
     if (fromSeq >= seq) return text;
+
+    let doc = Text.of(text.split('\n'));
     const ops = this.store.query({
       types: ['doc.op'],
       fromSequence: fromSeq + 1,
@@ -120,26 +144,51 @@ export class DocumentModel {
     });
 
     for (const record of ops) {
-      const op = JSON.parse(Buffer.from(record.payload).toString('utf-8')) as DocOp;
-      text = op.text;
+      const update = JSON.parse(Buffer.from(record.payload).toString('utf-8')) as SerializedUpdate;
+      try {
+        const changes = ChangeSet.fromJSON(update.changes);
+        doc = changes.apply(doc);
+      } catch {
+        // Skip
+      }
     }
 
-    return text;
+    return doc.toString();
   }
 
   /**
-   * Apply edit operations from the agent.
-   * Returns the new document text and the Chronicle sequence (checkpoint).
+   * Apply a CM6 ChangeSet from a browser client.
+   * Returns the assigned version and sequence for confirmation.
    */
-  applyEdits(operations: EditOperation[], clientId: string): { text: string; sequence: number } {
-    let text = this.currentText;
+  applyUpdate(changesJSON: unknown, clientID: string): { version: number; sequence: number } {
+    const changes = ChangeSet.fromJSON(changesJSON);
+    this.doc = changes.apply(this.doc);
+
+    const record = this.store.appendJson('doc.op', {
+      changes: changesJSON,
+      clientID,
+    } satisfies SerializedUpdate);
+
+    this.version++;
+    this.opsSinceCheckpoint++;
+    this.maybeCheckpoint();
+
+    return { version: this.version, sequence: record.sequence };
+  }
+
+  /**
+   * Apply edit operations from the agent (tool calls).
+   * Converts line-based operations to a CM6 ChangeSet, applies it,
+   * and returns the update for broadcasting to browser clients.
+   */
+  applyEdits(operations: EditOperation[], clientID: string): { text: string; version: number; sequence: number; changes: unknown } {
+    let text = this.doc.toString();
 
     for (const op of operations) {
       switch (op.type) {
         case 'replace_all':
           text = op.text;
           break;
-
         case 'replace_range': {
           const lines = text.split('\n');
           const start = (op.startLine ?? 1) - 1;
@@ -149,7 +198,6 @@ export class DocumentModel {
           text = lines.join('\n');
           break;
         }
-
         case 'insert_after': {
           const lines = text.split('\n');
           const after = op.line ?? 0;
@@ -161,82 +209,73 @@ export class DocumentModel {
       }
     }
 
-    const previousLength = this.currentText.length;
-    this.currentText = text;
+    // Create a ChangeSet that replaces the entire document with the new text
+    const changes = ChangeSet.of(
+      { from: 0, to: this.doc.length, insert: text },
+      this.doc.length,
+    );
+    const changesJSON = changes.toJSON();
+    this.doc = changes.apply(this.doc);
 
-    // Append doc.op record
     const record = this.store.appendJson('doc.op', {
-      text,
-      clientId,
-      previousLength,
-    } satisfies DocOp);
+      changes: changesJSON,
+      clientID,
+    } satisfies SerializedUpdate);
 
+    this.version++;
     this.opsSinceCheckpoint++;
     this.maybeCheckpoint();
 
-    return { text, sequence: record.sequence };
-  }
-
-  /**
-   * Apply a raw text update from a browser client (via WebSocket).
-   * Returns the Chronicle sequence.
-   */
-  applyBrowserOp(text: string, clientId: string): number {
-    const previousLength = this.currentText.length;
-    this.currentText = text;
-
-    const record = this.store.appendJson('doc.op', {
-      text,
-      clientId,
-      previousLength,
-    } satisfies DocOp);
-
-    this.opsSinceCheckpoint++;
-    this.maybeCheckpoint();
-
-    return record.sequence;
+    return { text, version: this.version, sequence: record.sequence, changes: changesJSON };
   }
 
   /** Get document outline (headings with line numbers). */
   getOutline(): OutlineEntry[] {
-    const lines = this.currentText.split('\n');
+    const text = this.doc.toString();
+    const lines = text.split('\n');
     const outline: OutlineEntry[] = [];
-
     for (let i = 0; i < lines.length; i++) {
       const match = lines[i]!.match(/^(#{1,6})\s+(.+)/);
       if (match) {
-        outline.push({
-          level: match[1]!.length,
-          text: match[2]!,
-          line: i + 1,
-        });
+        outline.push({ level: match[1]!.length, text: match[2]!, line: i + 1 });
       }
     }
-
     return outline;
   }
 
-  /** Get current sequence number as a checkpoint string. */
   currentCheckpoint(): string {
     return `seq_${this.store.currentSequence()}`;
   }
 
-  /** Parse a checkpoint string to a sequence number. */
   parseCheckpoint(checkpoint: string): number | null {
     const match = checkpoint.match(/^seq_(\d+)$/);
     if (!match) return null;
     return parseInt(match[1]!, 10);
   }
 
-  /** Force a checkpoint now. */
   forceCheckpoint(): void {
-    this.store.appendJson('doc.checkpoint', {
-      text: this.currentText,
-    } satisfies DocCheckpoint);
+    this.store.appendJson('doc.checkpoint', { text: this.doc.toString() });
     this.opsSinceCheckpoint = 0;
   }
 
-  /** Create a checkpoint if enough ops have accumulated. */
+  /**
+   * Get all updates since a given version (for catch-up).
+   * Returns serialized updates that a client can apply.
+   */
+  getUpdatesSince(version: number): SerializedUpdate[] {
+    // version = number of doc.ops already seen
+    // We need doc.ops from (baselineSeq + version + 1) to current
+    const fromSeq = this.baselineSeq + version + 1;
+    const ops = this.store.query({
+      types: ['doc.op'],
+      fromSequence: fromSeq,
+    });
+
+    return ops.map(record => {
+      return JSON.parse(Buffer.from(record.payload).toString('utf-8')) as SerializedUpdate;
+    });
+  }
+
   private maybeCheckpoint(): void {
     if (this.opsSinceCheckpoint >= CHECKPOINT_INTERVAL) {
       this.forceCheckpoint();

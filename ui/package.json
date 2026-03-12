@@ -9,20 +9,21 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "vue": "^3.5.0",
-    "@codemirror/state": "^6.5.0",
-    "@codemirror/view": "^6.36.0",
+    "@codemirror/autocomplete": "^6.18.0",
+    "@codemirror/collab": "^6.1.1",
+    "@codemirror/commands": "^6.7.0",
     "@codemirror/lang-markdown": "^6.3.0",
     "@codemirror/language": "^6.10.0",
-    "@codemirror/commands": "^6.7.0",
     "@codemirror/search": "^6.5.0",
-    "@codemirror/autocomplete": "^6.18.0",
-    "@lezer/highlight": "^1.2.0"
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.36.0",
+    "@lezer/highlight": "^1.2.0",
+    "vue": "^3.5.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.0",
-    "vite": "^6.0.0",
     "typescript": "^5.5.0",
+    "vite": "^6.0.0",
     "vue-tsc": "^2.2.0"
   }
 }

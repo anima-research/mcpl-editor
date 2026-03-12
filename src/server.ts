@@ -63,6 +63,7 @@ export class EditorServer {
 
     // Create MCPL server after doc is initialized (needs current checkpoint)
     this.mcplServer = new EditorMcplServer(this.doc, this.chat);
+    this.mcplServer.setBroadcast((changes, clientID) => this.broadcastAgentUpdate(changes, clientID));
   }
 
   /**
@@ -184,10 +185,11 @@ export class EditorServer {
   private handleBrowserConnection(ws: WebSocket): void {
     const clientId = `browser-${this.nextClientId++}`;
 
-    // Create a Chronicle subscription for this client
+    // Create a Chronicle subscription for chat messages only
+    // (doc.ops are broadcast directly via broadcastUpdates for lower latency)
     const subscriptionId = this.store.subscribe({
       filter: {
-        recordTypes: ['doc.op', 'doc.checkpoint', 'chat.message'],
+        recordTypes: ['chat.message'],
         includeRecords: true,
       },
     });
@@ -198,11 +200,12 @@ export class EditorServer {
     const client: BrowserClient = { ws, clientId, subscriptionId };
     this.browserClients.set(clientId, client);
 
-    // Send initial state
+    // Send initial state with collab version
     ws.send(JSON.stringify({
       type: 'init',
       clientId,
       text: this.doc.getText(),
+      version: this.doc.getVersion(),
       checkpoint: this.doc.currentCheckpoint(),
     }));
 
@@ -223,14 +226,34 @@ export class EditorServer {
 
   private handleBrowserMessage(clientId: string, msg: Record<string, unknown>): void {
     switch (msg.type) {
-      case 'op': {
-        // Browser is sending a document edit
-        const text = msg.text as string;
+      case 'pushUpdates': {
+        // Browser is sending collab updates (CM6 ChangeSets)
+        const clientVersion = msg.version as number;
+        const updates = msg.updates as Array<{ changes: unknown; clientID: string }>;
+
+        if (clientVersion !== this.doc.getVersion()) {
+          // Client is behind — send them the updates they missed
+          const missed = this.doc.getUpdatesSince(clientVersion);
+          const client = this.browserClients.get(clientId);
+          if (client && client.ws.readyState === WebSocket.OPEN) {
+            client.ws.send(JSON.stringify({ type: 'updates', updates: missed }));
+          }
+          return;
+        }
+
         const previousText = this.doc.getText();
-        const sequence = this.doc.applyBrowserOp(text, clientId);
+        const confirmed: Array<{ changes: unknown; clientID: string }> = [];
+
+        for (const update of updates) {
+          const { version } = this.doc.applyUpdate(update.changes, update.clientID);
+          confirmed.push({ changes: update.changes, clientID: update.clientID });
+        }
+
+        // Broadcast confirmed updates to ALL browser clients (including sender)
+        this.broadcastUpdates(confirmed);
 
         // Notify MCPL host
-        this.mcplServer.notifyDocumentChanged(text, previousText);
+        this.mcplServer.notifyDocumentChanged(this.doc.getText(), previousText);
         break;
       }
 
@@ -250,7 +273,26 @@ export class EditorServer {
   }
 
   // ==========================================================================
-  // Subscription polling → broadcast to browser clients
+  // Broadcasting
+  // ==========================================================================
+
+  /** Broadcast confirmed collab updates to all browser clients. */
+  private broadcastUpdates(updates: Array<{ changes: unknown; clientID: string }>): void {
+    const msg = JSON.stringify({ type: 'updates', updates });
+    for (const [, client] of this.browserClients) {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(msg);
+      }
+    }
+  }
+
+  /** Broadcast confirmed updates from an agent edit to all browser clients. */
+  broadcastAgentUpdate(changes: unknown, clientID: string): void {
+    this.broadcastUpdates([{ changes, clientID }]);
+  }
+
+  // ==========================================================================
+  // Subscription polling → chat messages only
   // ==========================================================================
 
   private pollSubscriptions(): void {
@@ -259,22 +301,21 @@ export class EditorServer {
 
       let event: JsStoreEvent | null;
       while ((event = this.store.pollSubscription(client.subscriptionId)) !== null) {
-        // Skip lifecycle events (caught_up, dropped)
         if (event.eventType === 'caught_up' || event.eventType === 'dropped') continue;
 
-        // Parse the event data
         const parsed = JSON.parse(event.data);
 
-        // Skip ops from this client (they already have them locally)
-        if (event.eventType === 'record' && parsed.record?.payload?.clientId === clientId) {
-          continue;
-        }
+        // Only forward chat messages (doc.ops are handled via broadcastUpdates)
+        if (event.eventType === 'record' && parsed.record?.record_type === 'chat.message') {
+          // Skip chat messages from this client (already shown optimistically)
+          if (parsed.record?.payload?.authorId === clientId) continue;
 
-        client.ws.send(JSON.stringify({
-          type: 'event',
-          eventType: event.eventType,
-          data: parsed,
-        }));
+          client.ws.send(JSON.stringify({
+            type: 'event',
+            eventType: event.eventType,
+            data: parsed,
+          }));
+        }
       }
     }
   }

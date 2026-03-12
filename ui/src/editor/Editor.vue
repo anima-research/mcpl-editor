@@ -28,27 +28,20 @@ onMounted(() => {
       syntaxHighlighting(defaultHighlightStyle),
       markdown(),
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-      EditorView.updateListener.of(props.sync.updateListener()),
+      ...props.sync.extensions(),
       EditorView.theme({
-        '&': {
-          height: '100%',
-          fontSize: '14px',
-        },
+        '&': { height: '100%', fontSize: '14px' },
         '.cm-scroller': {
           overflow: 'auto',
           fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
         },
-        '.cm-content': {
-          padding: '16px 0',
-        },
+        '.cm-content': { padding: '16px 0' },
         '.cm-gutters': {
           backgroundColor: '#f8f9fa',
           borderRight: '1px solid #e0e0e0',
           color: '#999',
         },
-        '.cm-activeLine': {
-          backgroundColor: '#f0f4ff',
-        },
+        '.cm-activeLine': { backgroundColor: '#f0f4ff' },
       }),
     ],
   });
@@ -57,8 +50,6 @@ onMounted(() => {
     state,
     parent: editorEl.value,
   });
-
-  props.sync.setView(view);
 
   onUnmounted(() => {
     view.destroy();

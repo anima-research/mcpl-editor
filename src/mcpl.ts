@@ -41,11 +41,17 @@ export class EditorMcplServer {
   private pushDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pushMaxTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingSummary: string | null = null;
+  private broadcastFn: ((changes: unknown, clientID: string) => void) | null = null;
 
   constructor(doc: DocumentModel, chat: ChatManager) {
     this.doc = doc;
     this.chat = chat;
     this.currentCheckpoint = doc.currentCheckpoint();
+  }
+
+  /** Set the broadcast function for pushing agent edits to browser clients. */
+  setBroadcast(fn: (changes: unknown, clientID: string) => void): void {
+    this.broadcastFn = fn;
   }
 
   /**
@@ -274,10 +280,13 @@ export class EditorMcplServer {
 
       case 'edit_document': {
         const operations = args.operations as import('./document.js').EditOperation[];
-        const { text, sequence } = this.doc.applyEdits(operations, 'agent');
+        const { text, sequence, changes } = this.doc.applyEdits(operations, 'agent');
         const checkpoint = `seq_${sequence}`;
         const parent = this.currentCheckpoint;
         this.currentCheckpoint = checkpoint;
+
+        // Broadcast to browser clients so they see the edit in real-time
+        this.broadcastFn?.(changes, 'agent');
 
         // Send state/update to host
         if (this.conn && isEnabled('editor.observe', this.enabledFeatureSets)) {
