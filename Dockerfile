@@ -9,7 +9,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Clone and build mcpl-core-ts
-RUN git clone --depth 1 https://github.com/anima-research/mcpl-core-ts.git mcpl-core-ts \
+RUN git clone --depth 1 --branch feature/mcpl-v05-state-branches https://github.com/anima-research/mcpl-core-ts.git mcpl-core-ts \
  && cd mcpl-core-ts && npm install && npx tsc
 
 # Clone and build chronicle (native N-API bindings from Rust)
