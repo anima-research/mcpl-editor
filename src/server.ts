@@ -260,7 +260,7 @@ export class EditorServer {
         const parsed = JSON.parse(event.data);
 
         // Skip ops from this client (they already have them locally)
-        if (event.eventType === 'record' && parsed.payload?.clientId === clientId) {
+        if (event.eventType === 'record' && parsed.record?.payload?.clientId === clientId) {
           continue;
         }
 

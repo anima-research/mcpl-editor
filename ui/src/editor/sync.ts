@@ -47,18 +47,20 @@ export function createEditorSync(ws: UseWebSocket): EditorSync {
       }
 
       case 'event': {
-        // Chronicle subscription event
+        // Chronicle subscription event — data is { record: { record_type, payload, ... } }
         const eventType = msg.eventType as string;
         const data = msg.data as Record<string, unknown>;
 
         if (eventType === 'record') {
-          const payload = data.payload as Record<string, unknown> | undefined;
+          const record = data.record as Record<string, unknown> | undefined;
+          if (!record) break;
+          const payload = record.payload as Record<string, unknown> | undefined;
           if (!payload) break;
 
-          const recordType = data.record_type as string ?? (data as any).recordType;
+          const recordType = record.record_type as string;
 
           // doc.op — apply remote document edit
-          if (recordType === 'doc.op' || payload.clientId !== undefined) {
+          if (recordType === 'doc.op') {
             const newText = payload.text as string;
             if (newText === undefined) break;
 

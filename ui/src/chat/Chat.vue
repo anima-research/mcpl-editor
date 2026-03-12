@@ -21,7 +21,9 @@ const messagesEl = ref<HTMLElement>();
 props.ws.onMessage((msg: WsMessage) => {
   if (msg.type !== 'event') return;
   const data = msg.data as Record<string, unknown>;
-  const payload = data.payload as Record<string, unknown> | undefined;
+  const record = data.record as Record<string, unknown> | undefined;
+  if (!record) return;
+  const payload = record.payload as Record<string, unknown> | undefined;
   if (!payload) return;
   if (payload.author === undefined || payload.text === undefined) return;
   // This is a chat.message record
