@@ -209,6 +209,13 @@ export class EditorServer {
       checkpoint: this.doc.currentCheckpoint(),
     }));
 
+    // Send chat history
+    const chatRecords = this.store.query({ types: ['chat.message'], limit: 100 });
+    if (chatRecords.length > 0) {
+      const messages = chatRecords.map(r => JSON.parse(Buffer.from(r.payload).toString('utf-8')));
+      ws.send(JSON.stringify({ type: 'chat-history', messages }));
+    }
+
     ws.on('message', (data) => {
       try {
         const msg = JSON.parse(typeof data === 'string' ? data : data.toString('utf-8'));

@@ -65,8 +65,9 @@ export class ChatManager {
 
     const record = this.store.appendJson('chat.message', msg);
 
-    // Forward to MCPL host if channel is open
-    if (this.conn && this.channelOpen) {
+    // Forward to MCPL host (send regardless of channel open state —
+    // the host may not explicitly open the channel but still wants messages)
+    if (this.conn) {
       try {
         await this.conn.sendRequest(method.CHANNELS_INCOMING, {
           messages: [{

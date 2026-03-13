@@ -19,6 +19,17 @@ const messagesEl = ref<HTMLElement>();
 
 // Listen for chat messages from server
 props.ws.onMessage((msg: WsMessage) => {
+  // Chat history on connect
+  if (msg.type === 'chat-history') {
+    const history = msg.messages as ChatMessage[];
+    messages.value = history;
+    nextTick(() => {
+      messagesEl.value?.scrollTo(0, messagesEl.value.scrollHeight);
+    });
+    return;
+  }
+
+  // Live chat messages via subscription
   if (msg.type !== 'event') return;
   const data = msg.data as Record<string, unknown>;
   const record = data.record as Record<string, unknown> | undefined;
@@ -26,8 +37,13 @@ props.ws.onMessage((msg: WsMessage) => {
   const payload = record.payload as Record<string, unknown> | undefined;
   if (!payload) return;
   if (payload.author === undefined || payload.text === undefined) return;
-  // This is a chat.message record
   if (payload.source !== 'human' && payload.source !== 'agent') return;
+
+  // Deduplicate: skip if we already have this message (from optimistic add)
+  const isDuplicate = messages.value.some(
+    m => m.timestamp === payload.timestamp && m.text === payload.text && m.author === payload.author
+  );
+  if (isDuplicate) return;
 
   messages.value.push({
     author: payload.author as string,
