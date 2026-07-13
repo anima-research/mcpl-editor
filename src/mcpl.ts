@@ -9,8 +9,8 @@ import type {
   JsonRpcNotification,
   PushEventParams,
   StateUpdateParams,
-} from '@connectome/mcpl-core';
-import { method, textContent } from '@connectome/mcpl-core';
+} from '@animalabs/mcpl-core';
+import { method, textContent } from '@animalabs/mcpl-core';
 
 import type { DocumentModel } from './document.js';
 import type { ChatManager } from './chat.js';
@@ -230,7 +230,7 @@ export class EditorMcplServer {
       case method.CHANNELS_PUBLISH: {
         const params = (notif.params ?? {}) as { channelId?: string; content?: unknown[] };
         if (params.channelId === CHAT_CHANNEL.id && params.content) {
-          this.chat.handleAgentMessage(params.content as import('@connectome/mcpl-core').ContentBlock[]);
+          this.chat.handleAgentMessage(params.content as import('@animalabs/mcpl-core').ContentBlock[]);
         }
         break;
       }

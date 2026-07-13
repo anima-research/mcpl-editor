@@ -7,8 +7,8 @@
  */
 
 import type { JsStore } from 'chronicle';
-import type { McplConnection, ChannelDescriptor, ContentBlock } from '@connectome/mcpl-core';
-import { method, textContent } from '@connectome/mcpl-core';
+import type { McplConnection, ChannelDescriptor, ContentBlock } from '@animalabs/mcpl-core';
+import { method, textContent } from '@animalabs/mcpl-core';
 
 export interface ChatMessage {
   author: string;

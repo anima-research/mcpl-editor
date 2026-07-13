@@ -2,7 +2,7 @@
  * Feature set declarations for the editor MCPL server.
  */
 
-import type { FeatureSetDeclaration } from '@connectome/mcpl-core';
+import type { FeatureSetDeclaration } from '@animalabs/mcpl-core';
 
 export const featureSets: Record<string, FeatureSetDeclaration> = {
   'editor.observe': {

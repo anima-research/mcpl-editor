@@ -14,7 +14,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { JsStore } from 'chronicle';
 import type { JsStoreEvent } from 'chronicle';
-import { McplConnection } from '@connectome/mcpl-core';
+import { McplConnection } from '@animalabs/mcpl-core';
 
 import { DocumentModel } from './document.js';
 import { ChatManager } from './chat.js';

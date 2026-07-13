@@ -5,7 +5,7 @@
  */
 
 import WebSocket from 'ws';
-import { McplConnection } from '@connectome/mcpl-core';
+import { McplConnection } from '@animalabs/mcpl-core';
 
 const port = process.argv[2] ?? '3100';
 const url = `ws://localhost:${port}/mcpl`;
