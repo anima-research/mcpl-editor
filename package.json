@@ -14,6 +14,7 @@
   "scripts": {
     "start": "node --import tsx src/index.ts",
     "build": "tsc && npm --prefix ui install && npm --prefix ui run build && mkdir -p dist/ui && cp -R ui/dist dist/ui/",
+    "build:ci": "tsc && npm ci --prefix ui && npm --prefix ui run build && mkdir -p dist/ui && cp -R ui/dist dist/ui/",
     "typecheck": "tsc --noEmit",
     "dev": "node --import tsx src/index.ts",
     "dev:ui": "cd ui && npm run dev"
