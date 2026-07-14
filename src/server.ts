@@ -12,8 +12,8 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { resolve, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { JsStore } from 'chronicle';
-import type { JsStoreEvent } from 'chronicle';
+import { JsStore } from '@animalabs/chronicle';
+import type { JsStoreEvent } from '@animalabs/chronicle';
 import { McplConnection } from '@animalabs/mcpl-core';
 
 import { DocumentModel } from './document.js';

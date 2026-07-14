@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * mcpl-editor — Hosted collaborative markdown editor as MCPL server.
  *

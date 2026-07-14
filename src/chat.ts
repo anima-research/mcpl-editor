@@ -6,7 +6,7 @@
  * The MCPL host receives them via `channels/incoming`.
  */
 
-import type { JsStore } from 'chronicle';
+import type { JsStore } from '@animalabs/chronicle';
 import type { McplConnection, ChannelDescriptor, ContentBlock } from '@animalabs/mcpl-core';
 import { method, textContent } from '@animalabs/mcpl-core';
 

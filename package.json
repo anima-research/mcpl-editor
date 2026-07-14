@@ -1,10 +1,19 @@
 {
   "name": "@animalabs/mcpl-editor",
   "version": "0.1.0",
+  "description": "Hosted collaborative Markdown editor and MCPL server",
   "type": "module",
+  "main": "./dist/src/index.js",
+  "bin": {
+    "mcpl-editor": "./dist/src/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "start": "node --import tsx src/index.ts",
-    "build": "cd ui && npm install && npm run build && cd ..",
+    "build": "tsc && npm --prefix ui install && npm --prefix ui run build && mkdir -p dist/ui && cp -R ui/dist dist/ui/",
     "typecheck": "tsc --noEmit",
     "dev": "node --import tsx src/index.ts",
     "dev:ui": "cd ui && npm run dev"
@@ -12,8 +21,8 @@
   "dependencies": {
     "@codemirror/collab": "^6.1.1",
     "@codemirror/state": "^6.5.4",
-    "@animalabs/mcpl-core": "file:../mcpl-core-ts",
-    "chronicle": "file:../chronicle",
+    "@animalabs/mcpl-core": "^0.2.1",
+    "@animalabs/chronicle": "^0.2.6",
     "express": "^4.18.2",
     "tsx": "^4.7.0",
     "ws": "^8.14.2"

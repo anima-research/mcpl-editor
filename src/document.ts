@@ -11,8 +11,8 @@
  */
 
 import { ChangeSet, Text } from '@codemirror/state';
-import { JsStore } from 'chronicle';
-import type { JsRecord } from 'chronicle';
+import { JsStore } from '@animalabs/chronicle';
+import type { JsRecord } from '@animalabs/chronicle';
 
 // ============================================================================
 // Types
