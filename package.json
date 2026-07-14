@@ -14,6 +14,7 @@
   "scripts": {
     "start": "node --import tsx src/index.ts",
     "build": "tsc && npm --prefix ui install && npm --prefix ui run build && mkdir -p dist/ui && cp -R ui/dist dist/ui/",
+    "build:ci": "tsc && npm ci --prefix ui && npm --prefix ui run build && mkdir -p dist/ui && cp -R ui/dist dist/ui/",
     "typecheck": "tsc --noEmit",
     "dev": "node --import tsx src/index.ts",
     "dev:ui": "cd ui && npm run dev"
@@ -22,7 +23,7 @@
     "@codemirror/collab": "^6.1.1",
     "@codemirror/state": "^6.5.4",
     "@animalabs/mcpl-core": "^0.2.1",
-    "@animalabs/chronicle": "^0.2.6",
+    "@animalabs/chronicle": "^0.2.7",
     "express": "^4.18.2",
     "tsx": "^4.7.0",
     "ws": "^8.14.2"
