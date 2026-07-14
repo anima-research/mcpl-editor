@@ -1,11 +1,11 @@
 {
   "name": "@animalabs/mcpl-editor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Hosted collaborative Markdown editor and MCPL server",
   "type": "module",
   "main": "./dist/src/index.js",
   "bin": {
-    "mcpl-editor": "./dist/src/index.js"
+    "mcpl-editor": "dist/src/index.js"
   },
   "files": [
     "dist",
